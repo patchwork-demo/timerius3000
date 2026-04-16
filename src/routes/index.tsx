@@ -25,6 +25,24 @@ function formatPreset(seconds: number): string {
 const FIXED_PRESETS = [1, 5, 10, 25].map((m) => m * 60);
 
 
+function formatTime(seconds: number): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
+function updateTabTitle(timers: Timer[]) {
+  const running = timers.filter((t) => t.status === "running");
+  if (running.length === 0) {
+    document.title = "Timerius 3000";
+  } else {
+    const closest = running.reduce((a, b) => (a.remaining <= b.remaining ? a : b));
+    document.title = `${formatTime(closest.remaining)} · Timerius 3000`;
+  }
+}
+
 function fireNotification(label: string) {
   if (typeof Notification === "undefined") return;
   if (Notification.permission === "granted") {
@@ -48,6 +66,7 @@ export default component$(() => {
     state.timers = loadTimers();
     state.recentPresets = getRecentPresets();
     state.popularPresets = getMostUsedPresets();
+    updateTabTitle(state.timers);
 
     const tick = setInterval(() => {
       let changed = false;
@@ -67,9 +86,13 @@ export default component$(() => {
         }
       }
       if (changed) saveTimers(state.timers);
+      updateTabTitle(state.timers);
     }, 1000);
 
-    return () => clearInterval(tick);
+    return () => {
+      clearInterval(tick);
+      document.title = "Timerius 3000";
+    };
   });
 
   const addTimer = $((duration: number) => {
