@@ -143,9 +143,9 @@ export default component$(() => {
     <main class="mx-auto max-w-4xl px-4 py-6">
       {/* Header */}
       <div class="mb-6 flex items-center justify-between">
-        <h1 class="text-2xl font-bold text-gray-900">Timerius 3000</h1>
+        <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Timerius 3000</h1>
         <button
-          class="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 active:scale-95 transition-transform"
+          class="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 active:scale-95 transition-transform dark:bg-indigo-500 dark:hover:bg-indigo-600"
           onClick$={() => addTimer(5 * 60)}
         >
           + Add Timer
@@ -153,15 +153,15 @@ export default component$(() => {
       </div>
 
       {/* Preset bar */}
-      <div class="mb-6 space-y-2 rounded-2xl border border-gray-100 bg-white p-3 shadow-sm">
+      <div class="mb-6 space-y-2 rounded-2xl border border-gray-100 bg-white p-3 shadow-sm dark:border-gray-700 dark:bg-gray-800">
         <div class="flex flex-wrap items-center gap-2">
-          <span class="text-xs font-semibold uppercase tracking-wide text-gray-400">
+          <span class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
             Quick
           </span>
           {FIXED_PRESETS.map((secs) => (
             <button
               key={secs}
-              class="rounded-lg bg-indigo-50 px-3 py-1 text-sm font-medium text-indigo-700 hover:bg-indigo-100 transition-colors"
+              class="rounded-lg bg-indigo-50 px-3 py-1 text-sm font-medium text-indigo-700 hover:bg-indigo-100 transition-colors dark:bg-indigo-900/40 dark:text-indigo-300 dark:hover:bg-indigo-900/70"
               onClick$={() => addTimer(secs)}
             >
               {formatPreset(secs)}
@@ -171,13 +171,13 @@ export default component$(() => {
 
         {state.recentPresets.length > 0 && (
           <div class="flex flex-wrap items-center gap-2">
-            <span class="text-xs font-semibold uppercase tracking-wide text-gray-400">
+            <span class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
               Recent
             </span>
             {state.recentPresets.map((secs) => (
               <button
                 key={secs}
-                class="rounded-lg bg-gray-50 px-3 py-1 text-sm font-medium text-gray-600 hover:bg-gray-100 transition-colors"
+                class="rounded-lg bg-gray-50 px-3 py-1 text-sm font-medium text-gray-600 hover:bg-gray-100 transition-colors dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
                 onClick$={() => addTimer(secs)}
               >
                 {formatPreset(secs)}
@@ -188,13 +188,13 @@ export default component$(() => {
 
         {state.popularPresets.length > 0 && (
           <div class="flex flex-wrap items-center gap-2">
-            <span class="text-xs font-semibold uppercase tracking-wide text-gray-400">
+            <span class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
               Popular
             </span>
             {state.popularPresets.map((secs) => (
               <button
                 key={secs}
-                class="rounded-lg bg-amber-50 px-3 py-1 text-sm font-medium text-amber-700 hover:bg-amber-100 transition-colors"
+                class="rounded-lg bg-amber-50 px-3 py-1 text-sm font-medium text-amber-700 hover:bg-amber-100 transition-colors dark:bg-amber-900/30 dark:text-amber-300 dark:hover:bg-amber-900/60"
                 onClick$={() => addTimer(secs)}
               >
                 {formatPreset(secs)}
@@ -206,7 +206,7 @@ export default component$(() => {
 
       {/* Timer grid */}
       {state.timers.length === 0 ? (
-        <div class="flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-gray-200 py-16 text-gray-400">
+        <div class="flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-gray-200 py-16 text-gray-400 dark:border-gray-700 dark:text-gray-600">
           <span class="text-4xl">⏱</span>
           <p class="text-sm">No timers yet. Add one above or pick a preset.</p>
         </div>

@@ -1,1 +1,4 @@
 @import "tailwindcss";
+
+/* Switch dark variant to class-based so JS can override the OS preference */
+@custom-variant dark (&:where(.dark, .dark *));

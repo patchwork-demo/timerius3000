@@ -63,8 +63,8 @@ export const TimerCard = component$((props: TimerCardProps) => {
       class={[
         "flex flex-col gap-3 rounded-2xl border p-4 shadow-sm transition-all",
         isFinished
-          ? "border-green-400 bg-green-50 animate-pulse"
-          : "border-gray-200 bg-white",
+          ? "border-green-400 bg-green-50 animate-pulse dark:border-green-600 dark:bg-green-950"
+          : "border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800",
       ]}
     >
       {/* Label */}
@@ -73,7 +73,7 @@ export const TimerCard = component$((props: TimerCardProps) => {
         value={timer.label}
         placeholder="Timer name"
         disabled={isRunning || isFinished}
-        class="w-full rounded-lg border border-transparent bg-transparent text-sm font-semibold text-gray-700 placeholder-gray-300 focus:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-100 disabled:cursor-default"
+        class="w-full rounded-lg border border-transparent bg-transparent text-sm font-semibold text-gray-700 placeholder-gray-300 focus:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-100 disabled:cursor-default dark:text-gray-200 dark:placeholder-gray-600 dark:focus:border-indigo-500 dark:focus:ring-indigo-900"
         onInput$={(e) =>
           props.onLabelChange$((e.target as HTMLInputElement).value)
         }
@@ -87,10 +87,10 @@ export const TimerCard = component$((props: TimerCardProps) => {
             value={editingDuration.value}
             placeholder="mm:ss or minutes"
             class={[
-              "w-full rounded-lg border px-2 py-1 text-center font-mono text-3xl font-bold tracking-widest focus:outline-none focus:ring-2",
+              "w-full rounded-lg border px-2 py-1 text-center font-mono text-3xl font-bold tracking-widest focus:outline-none focus:ring-2 bg-transparent",
               durationError.value
-                ? "border-red-400 text-red-500 focus:ring-red-200"
-                : "border-gray-200 text-gray-800 focus:ring-indigo-100",
+                ? "border-red-400 text-red-500 focus:ring-red-200 dark:border-red-600 dark:text-red-400"
+                : "border-gray-200 text-gray-800 focus:ring-indigo-100 dark:border-gray-600 dark:text-gray-100 dark:focus:ring-indigo-900",
             ]}
             onInput$={(e) => {
               editingDuration.value = (e.target as HTMLInputElement).value;
@@ -106,7 +106,7 @@ export const TimerCard = component$((props: TimerCardProps) => {
         <div
           class={[
             "text-center font-mono text-4xl font-bold tracking-widest",
-            isFinished ? "text-green-600" : "text-gray-800",
+            isFinished ? "text-green-600 dark:text-green-400" : "text-gray-800 dark:text-gray-100",
           ]}
         >
           {isFinished ? "Done!" : formatTime(timer.remaining)}
@@ -115,7 +115,7 @@ export const TimerCard = component$((props: TimerCardProps) => {
 
       {/* Progress bar */}
       {!isIdle && (
-        <div class="h-2 w-full overflow-hidden rounded-full bg-gray-100">
+        <div class="h-2 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-gray-700">
           <div
             class={[
               "h-full rounded-full transition-all duration-1000",
@@ -131,7 +131,7 @@ export const TimerCard = component$((props: TimerCardProps) => {
         {/* Start / Pause / Resume */}
         {(isIdle || isPaused) && (
           <button
-            class="flex-1 rounded-xl bg-indigo-600 py-1.5 text-sm font-semibold text-white hover:bg-indigo-700 active:scale-95 transition-transform"
+            class="flex-1 rounded-xl bg-indigo-600 py-1.5 text-sm font-semibold text-white hover:bg-indigo-700 active:scale-95 transition-transform dark:bg-indigo-500 dark:hover:bg-indigo-600"
             onClick$={props.onStart$}
           >
             {isPaused ? "Resume" : "Start"}
@@ -139,7 +139,7 @@ export const TimerCard = component$((props: TimerCardProps) => {
         )}
         {isRunning && (
           <button
-            class="flex-1 rounded-xl bg-amber-500 py-1.5 text-sm font-semibold text-white hover:bg-amber-600 active:scale-95 transition-transform"
+            class="flex-1 rounded-xl bg-amber-500 py-1.5 text-sm font-semibold text-white hover:bg-amber-600 active:scale-95 transition-transform dark:bg-amber-600 dark:hover:bg-amber-700"
             onClick$={props.onPause$}
           >
             Pause
@@ -149,7 +149,7 @@ export const TimerCard = component$((props: TimerCardProps) => {
         {/* Reset */}
         {(isPaused || isFinished) && (
           <button
-            class="rounded-xl bg-gray-100 px-3 py-1.5 text-sm font-semibold text-gray-600 hover:bg-gray-200 active:scale-95 transition-transform"
+            class="rounded-xl bg-gray-100 px-3 py-1.5 text-sm font-semibold text-gray-600 hover:bg-gray-200 active:scale-95 transition-transform dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
             onClick$={props.onReset$}
           >
             Reset
@@ -162,8 +162,8 @@ export const TimerCard = component$((props: TimerCardProps) => {
           class={[
             "rounded-xl px-2.5 py-1.5 text-sm transition-colors",
             timer.loop
-              ? "bg-indigo-100 text-indigo-700 hover:bg-indigo-200"
-              : "bg-gray-100 text-gray-400 hover:bg-gray-200",
+              ? "bg-indigo-100 text-indigo-700 hover:bg-indigo-200 dark:bg-indigo-900/50 dark:text-indigo-300 dark:hover:bg-indigo-900"
+              : "bg-gray-100 text-gray-400 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-500 dark:hover:bg-gray-600",
           ]}
           onClick$={props.onLoopToggle$}
         >
@@ -173,7 +173,7 @@ export const TimerCard = component$((props: TimerCardProps) => {
         {/* Delete */}
         <button
           title="Delete timer"
-          class="rounded-xl bg-gray-100 px-2.5 py-1.5 text-sm text-gray-400 hover:bg-red-100 hover:text-red-500 transition-colors"
+          class="rounded-xl bg-gray-100 px-2.5 py-1.5 text-sm text-gray-400 hover:bg-red-100 hover:text-red-500 transition-colors dark:bg-gray-700 dark:text-gray-500 dark:hover:bg-red-900/40 dark:hover:text-red-400"
           onClick$={props.onDelete$}
         >
           ✕

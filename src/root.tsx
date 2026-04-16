@@ -23,8 +23,10 @@ export default component$(() => {
           />
         )}
         <RouterHead />
+        {/* Runs synchronously before paint to prevent theme flash */}
+        <script dangerouslySetInnerHTML={`(function(){try{var t=localStorage.getItem('t3k_theme');var d=matchMedia('(prefers-color-scheme:dark)').matches;if(t==='dark'||(t!=='light'&&d)){document.documentElement.classList.add('dark')}document.documentElement.style.colorScheme=(!t||t==='auto')?'light dark':t}catch(e){}})()`} />
       </head>
-      <body lang="en">
+      <body lang="en" class="bg-gray-50 text-gray-900 dark:bg-gray-950 dark:text-gray-100">
         <RouterOutlet />
       </body>
     </QwikCityProvider>
