@@ -23,22 +23,47 @@ const KEYS = {
   presets: "t3k_presets",
 } as const;
 
+interface SavedTimers {
+  timers: Timer[];
+  savedAt: number;
+}
+
+function applyElapsed(timer: Timer, elapsed: number): Timer {
+  if (elapsed <= 0 || timer.status !== "running") return timer;
+
+  if (elapsed < timer.remaining) {
+    return { ...timer, remaining: timer.remaining - elapsed };
+  }
+
+  // Timer expired during downtime
+  if (timer.loop) {
+    const pastFirst = elapsed - timer.remaining;
+    const posInCycle = pastFirst % timer.duration;
+    return { ...timer, remaining: timer.duration - posInCycle };
+  }
+
+  return { ...timer, remaining: 0, status: "finished" };
+}
+
 export function loadTimers(): Timer[] {
   try {
     const raw = localStorage.getItem(KEYS.timers);
     if (!raw) return [];
-    const timers: Timer[] = JSON.parse(raw);
-    // Pause any timers that were running — can't tick while the tab was closed
-    return timers.map((t) =>
-      t.status === "running" ? { ...t, status: "paused" } : t
-    );
+    const saved: SavedTimers = JSON.parse(raw);
+    // Support old format (plain array)
+    const timers: Timer[] = Array.isArray(saved) ? saved : saved.timers;
+    const elapsed = Array.isArray(saved)
+      ? 0
+      : Math.floor((Date.now() - saved.savedAt) / 1000);
+    return timers.map((t) => applyElapsed(t, elapsed));
   } catch {
     return [];
   }
 }
 
 export function saveTimers(timers: Timer[]): void {
-  localStorage.setItem(KEYS.timers, JSON.stringify(timers));
+  const payload: SavedTimers = { timers, savedAt: Date.now() };
+  localStorage.setItem(KEYS.timers, JSON.stringify(payload));
 }
 
 export function loadSettings(): Settings {
