@@ -1,4 +1,5 @@
-import { component$, useStore, useVisibleTask$, $ } from "@builder.io/qwik";
+import { component$, useStore, useTask$, $ } from "@builder.io/qwik";
+import { isBrowser } from "@builder.io/qwik/build";
 import type { DocumentHead } from "@builder.io/qwik-city";
 import { TimerCard } from "~/components/timer-card/timer-card";
 import {
@@ -9,7 +10,7 @@ import {
   getRecentPresets,
   getMostUsedPresets,
 } from "~/lib/storage";
-import { playAlarm } from "~/lib/alarm";
+import { playAlarm, stopAlarm } from "~/lib/alarm";
 
 function makeId(): string {
   return Math.random().toString(36).slice(2, 9);
@@ -61,39 +62,45 @@ export default component$(() => {
     popularPresets: [],
   });
 
-  // Load from localStorage on mount, set up tick
-  useVisibleTask$(() => {
-    state.timers = loadTimers();
-    state.recentPresets = getRecentPresets();
-    state.popularPresets = getMostUsedPresets();
-    updateTabTitle(state.timers);
-
-    const tick = setInterval(() => {
-      let changed = false;
-      for (const t of state.timers) {
-        if (t.status !== "running") continue;
-        t.remaining -= 1;
-        changed = true;
-        if (t.remaining <= 0) {
-          t.remaining = 0;
-          if (t.loop) {
-            t.remaining = t.duration;
-          } else {
-            t.status = "finished";
-          }
-          playAlarm();
-          fireNotification(t.label);
-        }
-      }
-      if (changed) saveTimers(state.timers);
+  // SSR runs this task once with isBrowser false, then resumes the hook slot as "done" so the
+  // body is skipped on the client. { eagerness: "load" } registers qinit during SSR so the task
+  // runs again in the browser (localStorage + tick).
+  useTask$(
+    () => {
+      if (!isBrowser) return;
+      state.timers = loadTimers();
+      state.recentPresets = getRecentPresets();
+      state.popularPresets = getMostUsedPresets();
       updateTabTitle(state.timers);
-    }, 1000);
 
-    return () => {
-      clearInterval(tick);
-      document.title = "Timerius 3000";
-    };
-  });
+      const tick = setInterval(() => {
+        let changed = false;
+        for (const t of state.timers) {
+          if (t.status !== "running") continue;
+          t.remaining -= 1;
+          changed = true;
+          if (t.remaining <= 0) {
+            t.remaining = 0;
+            if (t.loop) {
+              t.remaining = t.duration;
+            } else {
+              t.status = "finished";
+            }
+            playAlarm();
+            fireNotification(t.label);
+          }
+        }
+        if (changed) saveTimers(state.timers);
+        updateTabTitle(state.timers);
+      }, 1000);
+
+      return () => {
+        clearInterval(tick);
+        document.title = "Timerius 3000";
+      };
+    },
+    { eagerness: "load" },
+  );
 
   const addTimer = $((duration: number) => {
     state.timers.push({
@@ -210,6 +217,7 @@ export default component$(() => {
                 state.timers[i].status = "idle";
                 saveTimers(state.timers);
               })}
+              onStopAudio$={$(() => stopAlarm())}
               onDelete$={$(() => {
                 state.timers.splice(i, 1);
                 saveTimers(state.timers);

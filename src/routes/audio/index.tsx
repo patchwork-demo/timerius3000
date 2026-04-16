@@ -1,8 +1,22 @@
-import { component$, useStore, useVisibleTask$, $ } from "@builder.io/qwik";
+import { component$, useStore, useTask$, $, noSerialize } from "@builder.io/qwik";
+import { isBrowser } from "@builder.io/qwik/build";
 import type { DocumentHead } from "@builder.io/qwik-city";
 import { type AudioEntry, getAllAudio, addAudio, deleteAudio, updateAudio } from "~/lib/db";
 import { loadSettings, saveSettings } from "~/lib/storage";
-import { playAlarm } from "~/lib/alarm";
+import { playAlarm, stopAlarm } from "~/lib/alarm";
+
+/** Mutable holder so split QRL chunks can update preview context without reassigning an ESM import binding. */
+const previewCtxHolder = { active: null as AudioContext | null };
+
+function stopPreview(state: Pick<AudioPageState, "previewingId" | "previewingSnippetId" | "previewingFull">): void {
+  if (previewCtxHolder.active) {
+    previewCtxHolder.active.close();
+    previewCtxHolder.active = null;
+  }
+  state.previewingId = null;
+  state.previewingSnippetId = null;
+  state.previewingFull = false;
+}
 
 function fmtTime(s: number): string {
   const m = Math.floor(s / 60);
@@ -14,6 +28,33 @@ function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+/** Qwik stores must not hold raw Blobs (serialization); wrap for the UI store only. */
+function entriesForStore(entries: AudioEntry[]): AudioEntry[] {
+  return entries.map((e) => ({ ...e, blob: noSerialize(e.blob) as unknown as Blob }));
+}
+
+const ALLOWED_AUDIO_MIME = new Set([
+  "audio/mpeg",
+  "audio/ogg",
+  "audio/wav",
+  "audio/x-wav",
+  "audio/mp4",
+  "audio/aac",
+  "audio/webm",
+  "audio/flac",
+]);
+
+const AUDIO_BY_EXTENSION = /\.(mp3|ogg|oga|wav|m4a|aac|webm|flac)$/i;
+
+function isAllowedAudioFile(file: File): boolean {
+  if (ALLOWED_AUDIO_MIME.has(file.type)) return true;
+  if (file.type.startsWith("audio/")) return true;
+  if (!file.type || file.type === "application/octet-stream") {
+    return AUDIO_BY_EXTENSION.test(file.name);
+  }
+  return false;
 }
 
 interface AudioPageState {
@@ -49,14 +90,15 @@ export default component$(() => {
     error: "",
   });
 
-  useVisibleTask$(async () => {
+  useTask$(async () => {
+    if (!isBrowser) return;
     const s = loadSettings();
     state.activeAudioId = s.activeAudioId;
     state.volume = s.volume ?? 0.7;
     state.loopCount = s.loopCount ?? 1;
     state.loopFade = s.loopFade ?? false;
     state.loopGapSeconds = s.loopGapSeconds ?? 0;
-    state.entries = await getAllAudio();
+    state.entries = entriesForStore(await getAllAudio());
   });
 
   // ── Upload ────────────────────────────────────────────────────────────────
@@ -66,9 +108,8 @@ export default component$(() => {
     const file = input.files?.[0];
     if (!file) return;
 
-    const allowed = ["audio/mpeg", "audio/ogg", "audio/wav", "audio/mp4", "audio/aac", "audio/webm"];
-    if (!allowed.includes(file.type)) {
-      state.error = "Unsupported format. Use mp3, ogg, or wav.";
+    if (!isAllowedAudioFile(file)) {
+      state.error = "Unsupported format. Use mp3, ogg, wav, m4a, aac, webm, or flac.";
       input.value = "";
       return;
     }
@@ -88,10 +129,12 @@ export default component$(() => {
         const buf = await ctx.decodeAudioData(ab);
         duration = buf.duration;
         ctx.close();
-      } catch {}
+      } catch {
+        void 0;
+      }
 
       const id = await addAudio(file.name, file, duration);
-      state.entries = await getAllAudio();
+      state.entries = entriesForStore(await getAllAudio());
       if (state.activeAudioId === null) {
         state.activeAudioId = id;
         saveSettings({ activeAudioId: id });
@@ -113,7 +156,7 @@ export default component$(() => {
       saveSettings({ activeAudioId: null });
     }
     if (state.expandedSnippetId === id) state.expandedSnippetId = null;
-    state.entries = await getAllAudio();
+    state.entries = entriesForStore(await getAllAudio());
   });
 
   const handleActivate$ = $((id: number) => {
@@ -124,9 +167,12 @@ export default component$(() => {
   const handlePreview$ = $(async (idx: number) => {
     const entry = state.entries[idx];
     if (!entry?.id) return;
+    stopPreview(state);
+    stopAlarm();
     state.previewingId = entry.id;
     try {
       const ctx = new AudioContext();
+      previewCtxHolder.active = ctx;
       const ab = await entry.blob.arrayBuffer();
       const buf = await ctx.decodeAudioData(ab);
       const source = ctx.createBufferSource();
@@ -138,7 +184,10 @@ export default component$(() => {
       source.start();
       source.onended = () => {
         ctx.close();
-        state.previewingId = null;
+        if (previewCtxHolder.active === ctx) {
+          previewCtxHolder.active = null;
+          state.previewingId = null;
+        }
       };
     } catch {
       state.previewingId = null;
@@ -169,7 +218,9 @@ export default component$(() => {
         ctx.close();
         state.entries[idx].duration = buf.duration;
         await updateAudio(id, { duration: buf.duration });
-      } catch {}
+      } catch {
+        void 0;
+      }
       state.loadingDurationId = null;
     }
   });
@@ -177,6 +228,7 @@ export default component$(() => {
   const handleSnippetStart$ = $(async (idx: number, value: number) => {
     const entry = state.entries[idx];
     if (!entry?.id || !entry.duration) return;
+    stopPreview(state);
     const end = entry.snippetEnd ?? entry.duration;
     const clamped = Math.min(value, end - 0.5);
     state.entries[idx].snippetStart = clamped;
@@ -186,6 +238,7 @@ export default component$(() => {
   const handleSnippetEnd$ = $(async (idx: number, value: number) => {
     const entry = state.entries[idx];
     if (!entry?.id || !entry.duration) return;
+    stopPreview(state);
     const start = entry.snippetStart ?? 0;
     const clamped = Math.max(value, start + 0.5);
     state.entries[idx].snippetEnd = clamped;
@@ -195,9 +248,12 @@ export default component$(() => {
   const handlePreviewSnippet$ = $(async (idx: number) => {
     const entry = state.entries[idx];
     if (!entry?.id) return;
+    stopPreview(state);
+    stopAlarm();
     state.previewingSnippetId = entry.id;
     try {
       const ctx = new AudioContext();
+      previewCtxHolder.active = ctx;
       const ab = await entry.blob.arrayBuffer();
       const buf = await ctx.decodeAudioData(ab);
       const start = entry.snippetStart ?? 0;
@@ -212,11 +268,19 @@ export default component$(() => {
       source.start(0, start, dur);
       source.onended = () => {
         ctx.close();
-        state.previewingSnippetId = null;
+        if (previewCtxHolder.active === ctx) {
+          previewCtxHolder.active = null;
+          state.previewingSnippetId = null;
+        }
       };
     } catch {
       state.previewingSnippetId = null;
     }
+  });
+
+  const handleStop$ = $(() => {
+    stopPreview(state);
+    stopAlarm();
   });
 
   // ── Volume & Loop settings ────────────────────────────────────────────────
@@ -245,6 +309,7 @@ export default component$(() => {
   });
 
   const handlePreviewFull$ = $(async () => {
+    stopPreview(state);
     state.previewingFull = true;
     try {
       await playAlarm();
@@ -348,14 +413,28 @@ export default component$(() => {
             </div>
           </div>
 
-          {/* Preview full alarm */}
-          <button
-            disabled={state.previewingFull}
-            class="w-full rounded-xl bg-indigo-600 py-2 text-sm font-semibold text-white transition-colors hover:bg-indigo-700 disabled:opacity-60 dark:bg-indigo-500 dark:hover:bg-indigo-600"
-            onClick$={handlePreviewFull$}
-          >
-            {state.previewingFull ? "Playing…" : "▶ Preview Alarm"}
-          </button>
+          {/* Preview full alarm — two buttons so each `onClick$` is a plain QRL (no QRL/plain ternary). */}
+          {state.previewingFull ? (
+            <button
+              class={[
+                "w-full rounded-xl py-2 text-sm font-semibold text-white transition-colors",
+                "bg-red-500 hover:bg-red-600 dark:bg-red-600 dark:hover:bg-red-700",
+              ]}
+              onClick$={handleStop$}
+            >
+              ■ Stop
+            </button>
+          ) : (
+            <button
+              class={[
+                "w-full rounded-xl py-2 text-sm font-semibold text-white transition-colors",
+                "bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600",
+              ]}
+              onClick$={handlePreviewFull$}
+            >
+              ▶ Preview Alarm
+            </button>
+          )}
         </div>
       </section>
 
@@ -373,10 +452,13 @@ export default component$(() => {
         ) : (
           <ul class="divide-y divide-gray-100 dark:divide-gray-700">
             {state.entries.map((entry, idx) => {
-              const isActive = entry.id === state.activeAudioId;
-              const isPreviewing = entry.id === state.previewingId;
-              const isExpanded = entry.id === state.expandedSnippetId;
-              const isLoadingDur = entry.id === state.loadingDurationId;
+              const audioId = entry.id;
+              if (audioId == null) return null;
+
+              const isActive = audioId === state.activeAudioId;
+              const isPreviewing = audioId === state.previewingId;
+              const isExpanded = audioId === state.expandedSnippetId;
+              const isLoadingDur = audioId === state.loadingDurationId;
 
               const dur = entry.duration ?? 0;
               const snipStart = entry.snippetStart ?? 0;
@@ -386,7 +468,7 @@ export default component$(() => {
               const snippetSet = entry.snippetStart !== undefined || entry.snippetEnd !== undefined;
 
               return (
-                <li key={entry.id} class="py-3">
+                <li key={audioId} class="py-3">
                   {/* Main row */}
                   <div class="flex items-center gap-2">
                     <div class="min-w-0 flex-1">
@@ -397,13 +479,27 @@ export default component$(() => {
                         {snippetSet ? ` · snippet ${fmtTime(snipStart)}–${fmtTime(snipEnd)}` : ""}
                       </p>
                     </div>
-                    <button
-                      class="rounded-lg bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-200 disabled:opacity-50 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
-                      disabled={isPreviewing}
-                      onClick$={() => handlePreview$(idx)}
-                    >
-                      {isPreviewing ? "▶ …" : "▶ Full"}
-                    </button>
+                    {isPreviewing ? (
+                      <button
+                        class={[
+                          "rounded-lg px-2.5 py-1 text-xs font-medium transition-colors",
+                          "bg-red-100 text-red-600 hover:bg-red-200 dark:bg-red-900/40 dark:text-red-400 dark:hover:bg-red-900/70",
+                        ]}
+                        onClick$={handleStop$}
+                      >
+                        ■ Stop
+                      </button>
+                    ) : (
+                      <button
+                        class={[
+                          "rounded-lg px-2.5 py-1 text-xs font-medium transition-colors",
+                          "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600",
+                        ]}
+                        onClick$={() => handlePreview$(idx)}
+                      >
+                        ▶ Full
+                      </button>
+                    )}
                     <button
                       class={[
                         "rounded-lg px-2.5 py-1 text-xs font-semibold transition-colors",
@@ -411,13 +507,13 @@ export default component$(() => {
                           ? "bg-indigo-600 text-white dark:bg-indigo-500"
                           : "bg-gray-100 text-gray-600 hover:bg-indigo-50 hover:text-indigo-700 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-indigo-900/40 dark:hover:text-indigo-300",
                       ]}
-                      onClick$={() => handleActivate$(entry.id!)}
+                      onClick$={() => handleActivate$(audioId)}
                     >
                       {isActive ? "✓ Active" : "Use"}
                     </button>
                     <button
                       class="rounded-lg px-2 py-1 text-xs text-gray-400 transition-colors hover:bg-red-50 hover:text-red-500 dark:text-gray-500 dark:hover:bg-red-900/40 dark:hover:text-red-400"
-                      onClick$={() => handleDelete$(entry.id!)}
+                      onClick$={() => handleDelete$(audioId)}
                     >
                       ✕
                     </button>
@@ -499,13 +595,27 @@ export default component$(() => {
                             <span class="text-xs text-gray-400 dark:text-gray-500">
                               {fmtTime(Math.max(0, snipEnd - snipStart))} of {fmtTime(dur)}
                             </span>
-                            <button
-                              disabled={state.previewingSnippetId === entry.id}
-                              class="rounded-lg bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700 transition-colors hover:bg-indigo-100 disabled:opacity-50 dark:bg-indigo-900/40 dark:text-indigo-300 dark:hover:bg-indigo-900/70"
-                              onClick$={() => handlePreviewSnippet$(idx)}
-                            >
-                              {state.previewingSnippetId === entry.id ? "Playing…" : "▶ Preview snippet"}
-                            </button>
+                            {state.previewingSnippetId === audioId ? (
+                              <button
+                                class={[
+                                  "rounded-lg px-3 py-1 text-xs font-medium transition-colors",
+                                  "bg-red-100 text-red-600 hover:bg-red-200 dark:bg-red-900/40 dark:text-red-400 dark:hover:bg-red-900/70",
+                                ]}
+                                onClick$={handleStop$}
+                              >
+                                ■ Stop
+                              </button>
+                            ) : (
+                              <button
+                                class={[
+                                  "rounded-lg px-3 py-1 text-xs font-medium transition-colors",
+                                  "bg-indigo-50 text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-900/40 dark:text-indigo-300 dark:hover:bg-indigo-900/70",
+                                ]}
+                                onClick$={() => handlePreviewSnippet$(idx)}
+                              >
+                                ▶ Preview snippet
+                              </button>
+                            )}
                           </div>
                         </>
                       )}

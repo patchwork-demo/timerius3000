@@ -1,15 +1,16 @@
-import { component$, useSignal, $ } from "@builder.io/qwik";
+import { component$, useSignal, $, type QRL } from "@builder.io/qwik";
 import type { Timer } from "~/lib/storage";
 
 interface TimerCardProps {
   timer: Timer;
-  onStart$: () => void;
-  onPause$: () => void;
-  onReset$: () => void;
-  onDelete$: () => void;
-  onLoopToggle$: () => void;
-  onLabelChange$: (label: string) => void;
-  onDurationChange$: (seconds: number) => void;
+  onStart$: QRL<() => void>;
+  onPause$: QRL<() => void>;
+  onReset$: QRL<() => void>;
+  onDelete$: QRL<() => void>;
+  onLoopToggle$: QRL<() => void>;
+  onStopAudio$: QRL<() => void | Promise<void>>;
+  onLabelChange$: QRL<(label: string) => void>;
+  onDurationChange$: QRL<(seconds: number) => void>;
 }
 
 function formatTime(seconds: number): string {
@@ -33,13 +34,26 @@ function parseDurationInput(value: string): number | null {
 }
 
 export const TimerCard = component$((props: TimerCardProps) => {
-  const { timer } = props;
+  const {
+    timer,
+    onStart$,
+    onPause$,
+    onReset$,
+    onDelete$,
+    onLoopToggle$,
+    onStopAudio$,
+    onLabelChange$,
+    onDurationChange$,
+  } = props;
   const editingDuration = useSignal(formatTime(timer.duration));
   const durationError = useSignal(false);
 
   const progress =
     timer.duration > 0
-      ? Math.max(0, Math.min(1, (timer.duration - timer.remaining) / timer.duration))
+      ? Math.max(
+          0,
+          Math.min(1, (timer.duration - timer.remaining) / timer.duration)
+        )
       : 0;
 
   const isIdle = timer.status === "idle";
@@ -55,7 +69,7 @@ export const TimerCard = component$((props: TimerCardProps) => {
       return;
     }
     durationError.value = false;
-    props.onDurationChange$(secs);
+    onDurationChange$(secs);
   });
 
   return (
@@ -74,9 +88,7 @@ export const TimerCard = component$((props: TimerCardProps) => {
         placeholder="Timer name"
         disabled={isRunning || isFinished}
         class="w-full rounded-lg border border-transparent bg-transparent text-sm font-semibold text-gray-700 placeholder-gray-300 focus:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-100 disabled:cursor-default dark:text-gray-200 dark:placeholder-gray-600 dark:focus:border-indigo-500 dark:focus:ring-indigo-900"
-        onInput$={(e) =>
-          props.onLabelChange$((e.target as HTMLInputElement).value)
-        }
+        onInput$={(e) => onLabelChange$((e.target as HTMLInputElement).value)}
       />
 
       {/* Countdown / Duration input */}
@@ -106,7 +118,9 @@ export const TimerCard = component$((props: TimerCardProps) => {
         <div
           class={[
             "text-center font-mono text-4xl font-bold tracking-widest",
-            isFinished ? "text-green-600 dark:text-green-400" : "text-gray-800 dark:text-gray-100",
+            isFinished
+              ? "text-green-600 dark:text-green-400"
+              : "text-gray-800 dark:text-gray-100",
           ]}
         >
           {isFinished ? "Done!" : formatTime(timer.remaining)}
@@ -132,7 +146,7 @@ export const TimerCard = component$((props: TimerCardProps) => {
         {(isIdle || isPaused) && (
           <button
             class="flex-1 rounded-xl bg-indigo-600 py-1.5 text-sm font-semibold text-white hover:bg-indigo-700 active:scale-95 transition-transform dark:bg-indigo-500 dark:hover:bg-indigo-600"
-            onClick$={props.onStart$}
+            onClick$={onStart$}
           >
             {isPaused ? "Resume" : "Start"}
           </button>
@@ -140,17 +154,30 @@ export const TimerCard = component$((props: TimerCardProps) => {
         {isRunning && (
           <button
             class="flex-1 rounded-xl bg-amber-500 py-1.5 text-sm font-semibold text-white hover:bg-amber-600 active:scale-95 transition-transform dark:bg-amber-600 dark:hover:bg-amber-700"
-            onClick$={props.onPause$}
+            onClick$={onPause$}
           >
             Pause
           </button>
         )}
 
-        {/* Reset */}
-        {(isPaused || isFinished) && (
+        {/* Finished: stop audio + reset in one action */}
+        {isFinished && (
+          <button
+            class="flex-1 rounded-xl bg-red-100 px-3 py-1.5 text-sm font-semibold text-red-600 hover:bg-red-200 active:scale-95 transition-transform dark:bg-red-900/40 dark:text-red-400 dark:hover:bg-red-900/70"
+            onClick$={async () => {
+              await onStopAudio$();
+              await onReset$();
+            }}
+          >
+            ■ Stop
+          </button>
+        )}
+
+        {/* Paused: reset only */}
+        {isPaused && (
           <button
             class="rounded-xl bg-gray-100 px-3 py-1.5 text-sm font-semibold text-gray-600 hover:bg-gray-200 active:scale-95 transition-transform dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
-            onClick$={props.onReset$}
+            onClick$={onReset$}
           >
             Reset
           </button>
@@ -165,7 +192,7 @@ export const TimerCard = component$((props: TimerCardProps) => {
               ? "bg-indigo-100 text-indigo-700 hover:bg-indigo-200 dark:bg-indigo-900/50 dark:text-indigo-300 dark:hover:bg-indigo-900"
               : "bg-gray-100 text-gray-400 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-500 dark:hover:bg-gray-600",
           ]}
-          onClick$={props.onLoopToggle$}
+          onClick$={onLoopToggle$}
         >
           ↻
         </button>
@@ -174,7 +201,7 @@ export const TimerCard = component$((props: TimerCardProps) => {
         <button
           title="Delete timer"
           class="rounded-xl bg-gray-100 px-2.5 py-1.5 text-sm text-gray-400 hover:bg-red-100 hover:text-red-500 transition-colors dark:bg-gray-700 dark:text-gray-500 dark:hover:bg-red-900/40 dark:hover:text-red-400"
-          onClick$={props.onDelete$}
+          onClick$={onDelete$}
         >
           ✕
         </button>
