@@ -58,6 +58,8 @@ function isAllowedAudioFile(file: File): boolean {
 }
 
 interface AudioPageState {
+  /** True until localStorage settings + IndexedDB entries are applied (avoids default→saved UI flash). */
+  booting: boolean;
   entries: AudioEntry[];
   activeAudioId: number | null;
   volume: number;
@@ -73,8 +75,21 @@ interface AudioPageState {
   error: string;
 }
 
+function AudioPageSkeleton() {
+  return (
+    <div class="animate-pulse space-y-4" aria-hidden="true">
+      <div class="h-8 w-56 rounded-lg bg-gray-200 dark:bg-gray-700" />
+      <div class="h-28 rounded-2xl bg-gray-100 dark:bg-gray-800" />
+      <div class="h-24 rounded-2xl bg-gray-100 dark:bg-gray-800" />
+      <div class="h-48 rounded-2xl bg-gray-100 dark:bg-gray-800" />
+      <div class="h-64 rounded-2xl bg-gray-100 dark:bg-gray-800" />
+    </div>
+  );
+}
+
 export default component$(() => {
   const state = useStore<AudioPageState>({
+    booting: true,
     entries: [],
     activeAudioId: null,
     volume: 0.7,
@@ -95,13 +110,17 @@ export default component$(() => {
   useTask$(
     async () => {
       if (!isBrowser) return;
-      const s = loadSettings();
-      state.activeAudioId = s.activeAudioId;
-      state.volume = s.volume ?? 0.7;
-      state.loopCount = s.loopCount ?? 1;
-      state.loopFade = s.loopFade ?? false;
-      state.loopGapSeconds = s.loopGapSeconds ?? 0;
-      state.entries = entriesForStore(await getAllAudio());
+      try {
+        const s = loadSettings();
+        state.activeAudioId = s.activeAudioId;
+        state.volume = s.volume ?? 0.7;
+        state.loopCount = s.loopCount ?? 1;
+        state.loopFade = s.loopFade ?? false;
+        state.loopGapSeconds = s.loopGapSeconds ?? 0;
+        state.entries = entriesForStore(await getAllAudio());
+      } finally {
+        state.booting = false;
+      }
     },
     { eagerness: "load" },
   );
@@ -326,7 +345,11 @@ export default component$(() => {
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <main class="mx-auto max-w-lg px-4 py-6">
+    <main class="mx-auto max-w-lg px-4 py-6" aria-busy={state.booting}>
+      {state.booting ? (
+        <AudioPageSkeleton />
+      ) : (
+        <>
       <h1 class="mb-6 text-2xl font-bold text-gray-900 dark:text-white">Audio Settings</h1>
 
       {/* ── Upload ── */}
@@ -638,6 +661,8 @@ export default component$(() => {
             : "Custom sound active."}
         </p>
       </section>
+        </>
+      )}
     </main>
   );
 });

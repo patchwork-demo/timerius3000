@@ -51,12 +51,31 @@ function fireNotification(label: string) {
   }
 }
 
+function TimerPageSkeleton() {
+  return (
+    <div class="animate-pulse space-y-6" aria-hidden="true">
+      <div class="flex justify-between gap-4">
+        <div class="h-8 w-48 rounded-lg bg-gray-200 dark:bg-gray-700" />
+        <div class="h-10 w-28 rounded-xl bg-gray-200 dark:bg-gray-700" />
+      </div>
+      <div class="h-24 rounded-2xl bg-gray-100 dark:bg-gray-800" />
+      <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div class="h-40 rounded-2xl bg-gray-100 dark:bg-gray-800" />
+        <div class="h-40 rounded-2xl bg-gray-100 dark:bg-gray-800" />
+        <div class="h-40 rounded-2xl bg-gray-100 dark:bg-gray-800" />
+      </div>
+    </div>
+  );
+}
+
 export default component$(() => {
   const state = useStore<{
+    booting: boolean;
     timers: Timer[];
     recentPresets: number[];
     popularPresets: number[];
   }>({
+    booting: true,
     timers: [],
     recentPresets: [],
     popularPresets: [],
@@ -71,6 +90,7 @@ export default component$(() => {
       state.timers = loadTimers();
       state.recentPresets = getRecentPresets();
       state.popularPresets = getMostUsedPresets();
+      state.booting = false;
       updateTabTitle(state.timers);
 
       const tick = setInterval(() => {
@@ -124,7 +144,11 @@ export default component$(() => {
   });
 
   return (
-    <main class="mx-auto max-w-4xl px-4 py-6">
+    <main class="mx-auto max-w-4xl px-4 py-6" aria-busy={state.booting}>
+      {state.booting ? (
+        <TimerPageSkeleton />
+      ) : (
+        <>
       {/* Header */}
       <div class="mb-6 flex items-center justify-between">
         <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Timerius 3000</h1>
@@ -238,6 +262,8 @@ export default component$(() => {
             />
           ))}
         </div>
+      )}
+        </>
       )}
     </main>
   );
