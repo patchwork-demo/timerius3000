@@ -30,17 +30,20 @@ This is a **Qwik City** SSR web app. Qwik's key distinction: apps are *resumable
 
 **Structure:**
 - `src/root.tsx` — app shell (`QwikCityProvider` → `RouterHead` + `RouterOutlet`)
-- `src/routes/layout.tsx` — shared layout: fixed footer nav linking `/` ↔ `/audio`
-- `src/routes/index.tsx` — main timer page: timer grid, preset bar, global 1s tick
-- `src/routes/audio/index.tsx` — audio management: upload, preview, activate, volume
-- `src/components/timer-card/timer-card.tsx` — individual timer card (idle/running/paused/finished)
-- `src/lib/storage.ts` — localStorage helpers: timers, settings, recent/freq preset history
-- `src/lib/db.ts` — IndexedDB helpers: audio blob storage (`timerius3000` DB, `audio` store)
+- `src/routes/layout.tsx` — shared layout: fixed footer nav linking `/` ↔ `/audio`, plus theme switcher (auto/light/dark) stored in `localStorage` key `t3k_theme`, toggling `dark` on `document.documentElement` and `color-scheme`
+- `src/routes/index.tsx` — main timer page: timer grid, preset bar, global 1s tick, `document.title` shows the shortest remaining time among **running** timers (default title when none)
+- `src/routes/audio/index.tsx` — audio management: upload, snippet selection, preview, activate, volume, loop count / fade / gap settings
+- `src/components/timer-card/timer-card.tsx` — individual timer card (idle/running/paused/finished); per-timer loop toggle; finished state **Stop** stops in-flight alarm audio then resets
+- `src/lib/storage.ts` — localStorage: timers (`t3k_timers` as `{ timers, savedAt }` for wall-clock catch-up on load), settings (`t3k_settings`: `activeAudioId`, `volume`, `loopCount`, `loopFade`, `loopGapSeconds`), recent/freq preset history (`t3k_presets`)
+- `src/lib/db.ts` — IndexedDB: audio blob storage (`timerius3000` DB, `audio` store); entries may include `snippetStart` / `snippetEnd`; `updateAudio()` patches duration/snippet fields
+- `src/lib/alarm.ts` — shared `playAlarm()` / `stopAlarm()`: Web Audio playback (snippet slice, optional multi-loop with fade/gap from settings) or 880 Hz sine fallback; `stopAlarm()` closes the context and settles any in-flight `playAlarm()` promise
 
 **Key patterns:**
-- All browser API access (IndexedDB, AudioContext, Notification, setInterval) lives inside `useVisibleTask$` — this is Qwik's hook for client-only side effects.
-- Timer state is a `useStore({ timers: Timer[] })` in `index.tsx`; a single `setInterval` ticks all running timers and saves to localStorage on each change.
-- Audio on finish: loads blob from IndexedDB → Web Audio API with GainNode for volume; falls back to a 440 Hz oscillator beep if no custom audio is set.
+- **Client-only work is split by route:** `src/routes/layout.tsx` uses `useVisibleTask$` for theme (localStorage + `matchMedia`). The timer and audio pages use **`useTask$` guarded with `isBrowser`** (from `@builder.io/qwik/build`) for localStorage, IndexedDB, `setInterval`, and alarms — not exclusively `useVisibleTask$`. The timer page uses `{ eagerness: "load" }` on that task so it registers during SSR and runs again in the browser after resume.
+- Timer state is a `useStore` in `index.tsx`; one `setInterval` ticks running timers, updates tab title, persists via `saveTimers`, and calls `playAlarm()` + optional `Notification` when a non-looping timer hits zero (looping timers reset `remaining` to `duration`).
+- On load, `loadTimers()` applies elapsed seconds since `savedAt` to **running** timers (handles finish and looping timers during downtime via `applyElapsed` in `storage.ts`).
+- Alarm playback is centralized in `alarm.ts`; `stopAlarm()` is used from finished timer **Stop**, and before audio previews on the audio page so previews do not stack on an active alarm.
+- The audio route keeps `AudioEntry` blobs in the UI store only through **`noSerialize`** wrappers (see `entriesForStore`) because Qwik stores must not hold raw `Blob` values for serialization.
 - Preset history: `recordPresetUse(duration)` in `src/lib/storage.ts` maintains both a `recent[]` (last 3 unique, newest-first) and a `freq{}` map (duration → count) in localStorage key `t3k_presets`.
 
 **TypeScript path alias:** `~/` resolves to `src/`.
