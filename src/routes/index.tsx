@@ -5,12 +5,11 @@ import {
   type Timer,
   loadTimers,
   saveTimers,
-  loadSettings,
   recordPresetUse,
   getRecentPresets,
   getMostUsedPresets,
 } from "~/lib/storage";
-import { getAudio } from "~/lib/db";
+import { playAlarm } from "~/lib/alarm";
 
 function makeId(): string {
   return Math.random().toString(36).slice(2, 9);
@@ -25,51 +24,6 @@ function formatPreset(seconds: number): string {
 
 const FIXED_PRESETS = [1, 5, 10, 25].map((m) => m * 60);
 
-function playFallbackBeep(volume: number) {
-  try {
-    const ctx = new AudioContext();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = "sine";
-    osc.frequency.value = 880;
-    gain.gain.value = volume;
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start();
-    osc.stop(ctx.currentTime + 0.6);
-    osc.onended = () => ctx.close();
-  } catch {
-    // audio not supported
-  }
-}
-
-async function playAlarm() {
-  const settings = loadSettings();
-  const volume = settings.volume ?? 0.7;
-
-  if (settings.activeAudioId !== null) {
-    try {
-      const entry = await getAudio(settings.activeAudioId);
-      if (entry) {
-        const ctx = new AudioContext();
-        const arrayBuf = await entry.blob.arrayBuffer();
-        const audioBuf = await ctx.decodeAudioData(arrayBuf);
-        const source = ctx.createBufferSource();
-        const gain = ctx.createGain();
-        gain.gain.value = volume;
-        source.buffer = audioBuf;
-        source.connect(gain);
-        gain.connect(ctx.destination);
-        source.start();
-        source.onended = () => ctx.close();
-        return;
-      }
-    } catch {
-      // fall through to beep
-    }
-  }
-  playFallbackBeep(volume);
-}
 
 function fireNotification(label: string) {
   if (typeof Notification === "undefined") return;

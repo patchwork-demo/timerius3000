@@ -4,6 +4,9 @@ export interface AudioEntry {
   blob: Blob;
   size: number;
   createdAt: number;
+  duration?: number;
+  snippetStart?: number;
+  snippetEnd?: number;
 }
 
 const DB_NAME = "timerius3000";
@@ -30,10 +33,10 @@ export async function getAllAudio(): Promise<AudioEntry[]> {
   });
 }
 
-export async function addAudio(name: string, blob: Blob): Promise<number> {
+export async function addAudio(name: string, blob: Blob, duration?: number): Promise<number> {
   const db = await openDB();
   return new Promise((resolve, reject) => {
-    const entry: AudioEntry = { name, blob, size: blob.size, createdAt: Date.now() };
+    const entry: AudioEntry = { name, blob, size: blob.size, createdAt: Date.now(), duration };
     const req = db.transaction(STORE, "readwrite").objectStore(STORE).add(entry);
     req.onsuccess = () => resolve(req.result as number);
     req.onerror = () => reject(req.error);
@@ -45,6 +48,26 @@ export async function getAudio(id: number): Promise<AudioEntry | undefined> {
   return new Promise((resolve, reject) => {
     const req = db.transaction(STORE, "readonly").objectStore(STORE).get(id);
     req.onsuccess = () => resolve(req.result as AudioEntry | undefined);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+export async function updateAudio(
+  id: number,
+  patch: Partial<Pick<AudioEntry, "duration" | "snippetStart" | "snippetEnd">>,
+): Promise<void> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, "readwrite");
+    const store = tx.objectStore(STORE);
+    const req = store.get(id);
+    req.onsuccess = () => {
+      const existing = req.result;
+      if (!existing) { resolve(); return; }
+      const putReq = store.put({ ...existing, ...patch });
+      putReq.onsuccess = () => resolve();
+      putReq.onerror = () => reject(putReq.error);
+    };
     req.onerror = () => reject(req.error);
   });
 }

@@ -10,6 +10,9 @@ export interface Timer {
 export interface Settings {
   activeAudioId: number | null;
   volume: number;
+  loopCount: number;
+  loopFade: boolean;
+  loopGapSeconds: number;
 }
 
 interface PresetHistory {
@@ -69,10 +72,11 @@ export function saveTimers(timers: Timer[]): void {
 export function loadSettings(): Settings {
   try {
     const raw = localStorage.getItem(KEYS.settings);
-    if (!raw) return { activeAudioId: null, volume: 0.7 };
-    return { activeAudioId: null, volume: 0.7, ...JSON.parse(raw) };
+    const defaults: Settings = { activeAudioId: null, volume: 0.7, loopCount: 1, loopFade: false, loopGapSeconds: 0 };
+    if (!raw) return defaults;
+    return { ...defaults, ...JSON.parse(raw) };
   } catch {
-    return { activeAudioId: null, volume: 0.7 };
+    return { activeAudioId: null, volume: 0.7, loopCount: 1, loopFade: false, loopGapSeconds: 0 };
   }
 }
 
