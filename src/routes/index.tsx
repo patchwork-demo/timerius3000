@@ -1,25 +1,264 @@
-import { component$ } from "@builder.io/qwik";
+import { component$, useStore, useVisibleTask$, $ } from "@builder.io/qwik";
 import type { DocumentHead } from "@builder.io/qwik-city";
+import { TimerCard } from "~/components/timer-card/timer-card";
+import {
+  type Timer,
+  loadTimers,
+  saveTimers,
+  loadSettings,
+  recordPresetUse,
+  getRecentPresets,
+  getMostUsedPresets,
+} from "~/lib/storage";
+import { getAudio } from "~/lib/db";
+
+function makeId(): string {
+  return Math.random().toString(36).slice(2, 9);
+}
+
+function formatPreset(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  if (s === 0) return `${m}m`;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+const FIXED_PRESETS = [1, 5, 10, 25].map((m) => m * 60);
+
+function playFallbackBeep(volume: number) {
+  try {
+    const ctx = new AudioContext();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.value = 880;
+    gain.gain.value = volume;
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.6);
+    osc.onended = () => ctx.close();
+  } catch {
+    // audio not supported
+  }
+}
+
+async function playAlarm() {
+  const settings = loadSettings();
+  const volume = settings.volume ?? 0.7;
+
+  if (settings.activeAudioId !== null) {
+    try {
+      const entry = await getAudio(settings.activeAudioId);
+      if (entry) {
+        const ctx = new AudioContext();
+        const arrayBuf = await entry.blob.arrayBuffer();
+        const audioBuf = await ctx.decodeAudioData(arrayBuf);
+        const source = ctx.createBufferSource();
+        const gain = ctx.createGain();
+        gain.gain.value = volume;
+        source.buffer = audioBuf;
+        source.connect(gain);
+        gain.connect(ctx.destination);
+        source.start();
+        source.onended = () => ctx.close();
+        return;
+      }
+    } catch {
+      // fall through to beep
+    }
+  }
+  playFallbackBeep(volume);
+}
+
+function fireNotification(label: string) {
+  if (typeof Notification === "undefined") return;
+  if (Notification.permission === "granted") {
+    new Notification(label || "Timer done!", { body: "Time's up! ⏱" });
+  }
+}
 
 export default component$(() => {
+  const state = useStore<{
+    timers: Timer[];
+    recentPresets: number[];
+    popularPresets: number[];
+  }>({
+    timers: [],
+    recentPresets: [],
+    popularPresets: [],
+  });
+
+  // Load from localStorage on mount, set up tick
+  useVisibleTask$(() => {
+    state.timers = loadTimers();
+    state.recentPresets = getRecentPresets();
+    state.popularPresets = getMostUsedPresets();
+
+    const tick = setInterval(() => {
+      let changed = false;
+      for (const t of state.timers) {
+        if (t.status !== "running") continue;
+        t.remaining -= 1;
+        changed = true;
+        if (t.remaining <= 0) {
+          t.remaining = 0;
+          if (t.loop) {
+            t.remaining = t.duration;
+          } else {
+            t.status = "finished";
+          }
+          playAlarm();
+          fireNotification(t.label);
+        }
+      }
+      if (changed) saveTimers(state.timers);
+    }, 1000);
+
+    return () => clearInterval(tick);
+  });
+
+  const addTimer = $((duration: number) => {
+    state.timers.push({
+      id: makeId(),
+      label: "",
+      duration,
+      remaining: duration,
+      status: "idle",
+      loop: false,
+    });
+    recordPresetUse(duration);
+    state.recentPresets = getRecentPresets();
+    state.popularPresets = getMostUsedPresets();
+    saveTimers(state.timers);
+  });
+
+  const requestNotifPermission = $(() => {
+    if (typeof Notification !== "undefined" && Notification.permission === "default") {
+      Notification.requestPermission();
+    }
+  });
+
   return (
-    <main class="flex min-h-screen flex-col items-center justify-center bg-gray-50 p-8">
-      <h1 class="text-4xl font-bold text-gray-900">Hi 👋</h1>
-      <p class="mt-4 text-lg text-gray-600">
-        Can't wait to see what you build with qwik!
-        <br />
-        Happy coding.
-      </p>
+    <main class="mx-auto max-w-4xl px-4 py-6">
+      {/* Header */}
+      <div class="mb-6 flex items-center justify-between">
+        <h1 class="text-2xl font-bold text-gray-900">Timerius 3000</h1>
+        <button
+          class="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 active:scale-95 transition-transform"
+          onClick$={() => addTimer(5 * 60)}
+        >
+          + Add Timer
+        </button>
+      </div>
+
+      {/* Preset bar */}
+      <div class="mb-6 space-y-2 rounded-2xl border border-gray-100 bg-white p-3 shadow-sm">
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="text-xs font-semibold uppercase tracking-wide text-gray-400">
+            Quick
+          </span>
+          {FIXED_PRESETS.map((secs) => (
+            <button
+              key={secs}
+              class="rounded-lg bg-indigo-50 px-3 py-1 text-sm font-medium text-indigo-700 hover:bg-indigo-100 transition-colors"
+              onClick$={() => addTimer(secs)}
+            >
+              {formatPreset(secs)}
+            </button>
+          ))}
+        </div>
+
+        {state.recentPresets.length > 0 && (
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="text-xs font-semibold uppercase tracking-wide text-gray-400">
+              Recent
+            </span>
+            {state.recentPresets.map((secs) => (
+              <button
+                key={secs}
+                class="rounded-lg bg-gray-50 px-3 py-1 text-sm font-medium text-gray-600 hover:bg-gray-100 transition-colors"
+                onClick$={() => addTimer(secs)}
+              >
+                {formatPreset(secs)}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {state.popularPresets.length > 0 && (
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="text-xs font-semibold uppercase tracking-wide text-gray-400">
+              Popular
+            </span>
+            {state.popularPresets.map((secs) => (
+              <button
+                key={secs}
+                class="rounded-lg bg-amber-50 px-3 py-1 text-sm font-medium text-amber-700 hover:bg-amber-100 transition-colors"
+                onClick$={() => addTimer(secs)}
+              >
+                {formatPreset(secs)}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Timer grid */}
+      {state.timers.length === 0 ? (
+        <div class="flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-gray-200 py-16 text-gray-400">
+          <span class="text-4xl">⏱</span>
+          <p class="text-sm">No timers yet. Add one above or pick a preset.</p>
+        </div>
+      ) : (
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {state.timers.map((timer, i) => (
+            <TimerCard
+              key={timer.id}
+              timer={timer}
+              onStart$={$(() => {
+                if (state.timers[i].remaining <= 0) {
+                  state.timers[i].remaining = state.timers[i].duration;
+                }
+                state.timers[i].status = "running";
+                saveTimers(state.timers);
+                requestNotifPermission();
+              })}
+              onPause$={$(() => {
+                state.timers[i].status = "paused";
+                saveTimers(state.timers);
+              })}
+              onReset$={$(() => {
+                state.timers[i].remaining = state.timers[i].duration;
+                state.timers[i].status = "idle";
+                saveTimers(state.timers);
+              })}
+              onDelete$={$(() => {
+                state.timers.splice(i, 1);
+                saveTimers(state.timers);
+              })}
+              onLoopToggle$={$(() => {
+                state.timers[i].loop = !state.timers[i].loop;
+                saveTimers(state.timers);
+              })}
+              onLabelChange$={$((label: string) => {
+                state.timers[i].label = label;
+                saveTimers(state.timers);
+              })}
+              onDurationChange$={$((seconds: number) => {
+                state.timers[i].duration = seconds;
+                state.timers[i].remaining = seconds;
+                saveTimers(state.timers);
+              })}
+            />
+          ))}
+        </div>
+      )}
     </main>
   );
 });
 
 export const head: DocumentHead = {
-  title: "Welcome to Qwik",
-  meta: [
-    {
-      name: "description",
-      content: "Qwik site description",
-    },
-  ],
+  title: "Timerius 3000",
+  meta: [{ name: "description", content: "Multiple simultaneous timers with custom audio" }],
 };
