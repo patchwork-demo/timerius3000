@@ -90,16 +90,21 @@ export default component$(() => {
     error: "",
   });
 
-  useTask$(async () => {
-    if (!isBrowser) return;
-    const s = loadSettings();
-    state.activeAudioId = s.activeAudioId;
-    state.volume = s.volume ?? 0.7;
-    state.loopCount = s.loopCount ?? 1;
-    state.loopFade = s.loopFade ?? false;
-    state.loopGapSeconds = s.loopGapSeconds ?? 0;
-    state.entries = entriesForStore(await getAllAudio());
-  });
+  // Same pattern as `/`: { eagerness: "load" } so SSR skips (isBrowser false) but the task still
+  // runs again in the browser after resume; otherwise deep-linking to `/audio` never loads storage.
+  useTask$(
+    async () => {
+      if (!isBrowser) return;
+      const s = loadSettings();
+      state.activeAudioId = s.activeAudioId;
+      state.volume = s.volume ?? 0.7;
+      state.loopCount = s.loopCount ?? 1;
+      state.loopFade = s.loopFade ?? false;
+      state.loopGapSeconds = s.loopGapSeconds ?? 0;
+      state.entries = entriesForStore(await getAllAudio());
+    },
+    { eagerness: "load" },
+  );
 
   // ── Upload ────────────────────────────────────────────────────────────────
 
