@@ -2,6 +2,7 @@ import { getAudio } from "./db";
 import { loadSettings } from "./storage";
 
 let currentCtx: AudioContext | null = null;
+let currentMasterGain: GainNode | null = null;
 /** Resolves the promise returned by the in-flight `playAlarm()` (natural end or `stopAlarm()`). */
 let settlePlaybackPromise: (() => void) | null = null;
 
@@ -15,29 +16,34 @@ export function stopAlarm(): void {
     currentCtx.close();
     currentCtx = null;
   }
+  currentMasterGain = null;
   notifyPlaybackFinished();
+}
+
+export function setAlarmVolume(v: number): void {
+  if (currentMasterGain) currentMasterGain.gain.value = v;
 }
 
 function scheduleFallbackBeeps(
   ctx: AudioContext,
+  masterGain: GainNode,
   count: number,
-  volume: number,
   loopFade: boolean,
   gapSeconds: number,
 ): Promise<void> {
   const beepDur = 0.6;
   const done: Promise<void>[] = [];
   for (let i = 0; i < count; i++) {
-    const loopVol =
-      loopFade && count > 1 ? volume * (1 - 0.5 * (i / (count - 1))) : volume;
+    const fadeRatio =
+      loopFade && count > 1 ? 1 - 0.5 * (i / (count - 1)) : 1;
     const when = ctx.currentTime + i * (beepDur + gapSeconds);
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.type = "sine";
     osc.frequency.value = 880;
-    gain.gain.value = loopVol;
+    gain.gain.value = fadeRatio;
     osc.connect(gain);
-    gain.connect(ctx.destination);
+    gain.connect(masterGain);
     done.push(
       new Promise<void>((resolve) => {
         osc.onended = () => resolve();
@@ -64,17 +70,21 @@ export async function playAlarm(): Promise<void> {
 
   const ctx = new AudioContext();
   currentCtx = ctx;
+  const masterGain = ctx.createGain();
+  masterGain.gain.value = volume;
+  masterGain.connect(ctx.destination);
+  currentMasterGain = masterGain;
 
   try {
     if (settings.activeAudioId === null) {
-      await scheduleFallbackBeeps(ctx, count, volume, loopFade, gapSeconds);
+      await scheduleFallbackBeeps(ctx, masterGain, count, loopFade, gapSeconds);
       return;
     }
 
     try {
       const entry = await getAudio(settings.activeAudioId);
       if (!entry) {
-        await scheduleFallbackBeeps(ctx, count, volume, loopFade, gapSeconds);
+        await scheduleFallbackBeeps(ctx, masterGain, count, loopFade, gapSeconds);
         return;
       }
 
@@ -87,15 +97,15 @@ export async function playAlarm(): Promise<void> {
 
       const ended: Promise<void>[] = [];
       for (let i = 0; i < count; i++) {
-        const loopVol =
-          loopFade && count > 1 ? volume * (1 - 0.5 * (i / (count - 1))) : volume;
+        const fadeRatio =
+          loopFade && count > 1 ? 1 - 0.5 * (i / (count - 1)) : 1;
         const when = ctx.currentTime + i * (snippetDuration + gapSeconds);
         const source = ctx.createBufferSource();
         const gain = ctx.createGain();
         source.buffer = audioBuf;
-        gain.gain.value = loopVol;
+        gain.gain.value = fadeRatio;
         source.connect(gain);
-        gain.connect(ctx.destination);
+        gain.connect(masterGain);
         ended.push(
           new Promise<void>((resolve) => {
             source.onended = () => resolve();
@@ -105,9 +115,10 @@ export async function playAlarm(): Promise<void> {
       }
       await Promise.all(ended);
     } catch {
-      await scheduleFallbackBeeps(ctx, count, volume, loopFade, gapSeconds);
+      await scheduleFallbackBeeps(ctx, masterGain, count, loopFade, gapSeconds);
     }
   } finally {
+    currentMasterGain = null;
     notifyPlaybackFinished();
   }
 

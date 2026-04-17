@@ -3,16 +3,18 @@ import { isBrowser } from "@builder.io/qwik/build";
 import type { DocumentHead } from "@builder.io/qwik-city";
 import { type AudioEntry, getAllAudio, addAudio, deleteAudio, updateAudio } from "~/lib/db";
 import { loadSettings, saveSettings } from "~/lib/storage";
-import { playAlarm, stopAlarm } from "~/lib/alarm";
+import { playAlarm, stopAlarm, setAlarmVolume } from "~/lib/alarm";
 
 /** Mutable holder so split QRL chunks can update preview context without reassigning an ESM import binding. */
 const previewCtxHolder = { active: null as AudioContext | null };
+const previewGainHolder = { active: null as GainNode | null };
 
 function stopPreview(state: Pick<AudioPageState, "previewingId" | "previewingSnippetId" | "previewingFull">): void {
   if (previewCtxHolder.active) {
     previewCtxHolder.active.close();
     previewCtxHolder.active = null;
   }
+  previewGainHolder.active = null;
   state.previewingId = null;
   state.previewingSnippetId = null;
   state.previewingFull = false;
@@ -205,11 +207,13 @@ export default component$(() => {
       source.buffer = buf;
       source.connect(gain);
       gain.connect(ctx.destination);
+      previewGainHolder.active = gain;
       source.start();
       source.onended = () => {
         ctx.close();
         if (previewCtxHolder.active === ctx) {
           previewCtxHolder.active = null;
+          previewGainHolder.active = null;
           state.previewingId = null;
         }
       };
@@ -289,11 +293,13 @@ export default component$(() => {
       source.buffer = buf;
       source.connect(gain);
       gain.connect(ctx.destination);
+      previewGainHolder.active = gain;
       source.start(0, start, dur);
       source.onended = () => {
         ctx.close();
         if (previewCtxHolder.active === ctx) {
           previewCtxHolder.active = null;
+          previewGainHolder.active = null;
           state.previewingSnippetId = null;
         }
       };
@@ -312,6 +318,8 @@ export default component$(() => {
   const handleVolumeChange$ = $((v: number) => {
     state.volume = v;
     saveSettings({ volume: v });
+    setAlarmVolume(v);
+    if (previewGainHolder.active) previewGainHolder.active.gain.value = v;
   });
 
   const handleLoopCount$ = $((v: number) => {
