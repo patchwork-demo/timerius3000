@@ -1,8 +1,8 @@
-import { component$, useStore, useTask$, useSignal, $ } from "@builder.io/qwik";
+import { component$, useStore, useTask$, $ } from "@builder.io/qwik";
 import { isBrowser } from "@builder.io/qwik/build";
 import type { DocumentHead } from "@builder.io/qwik-city";
 import { TimerCard } from "~/components/timer-card/timer-card";
-import { AddTimerModal } from "~/components/add-timer-modal/add-timer-modal";
+import { AddTimerModalSection } from "~/components/add-timer-modal/add-timer-modal-section";
 import {
   type Timer,
   loadTimers,
@@ -17,8 +17,6 @@ import { playAlarm, stopAlarm } from "~/lib/alarm";
 function makeId(): string {
   return Math.random().toString(36).slice(2, 9);
 }
-
-const FIXED_PRESETS = [1, 5, 10, 25].map((m) => m * 60);
 
 function formatTime(seconds: number): string {
   const h = Math.floor(seconds / 3600);
@@ -73,8 +71,6 @@ export default component$(() => {
     popularPresets: [],
   });
 
-  const addModalOpen = useSignal(false);
-
   // SSR runs this task once with isBrowser false, then resumes the hook slot as "done" so the
   // body is skipped on the client. { eagerness: "load" } registers qinit during SSR so the task
   // runs again in the browser (localStorage + tick).
@@ -122,10 +118,6 @@ export default component$(() => {
     }
   });
 
-  const closeAddModal$ = $(() => {
-    addModalOpen.value = false;
-  });
-
   const commitAddTimer$ = $(
     (opts: { duration: number; label: string; loop: boolean; startNow: boolean }) => {
       const status = opts.startNow ? "running" : "idle";
@@ -146,7 +138,6 @@ export default component$(() => {
       state.recentPresets = getRecentPresets();
       state.popularPresets = getMostUsedPresets();
       saveTimers(state.timers);
-      addModalOpen.value = false;
     },
   );
 
@@ -156,26 +147,11 @@ export default component$(() => {
         <TimerPageSkeleton />
       ) : (
         <>
-          <AddTimerModal
-            open={addModalOpen}
-            fixedPresets={FIXED_PRESETS}
+          <AddTimerModalSection
             recentPresets={state.recentPresets}
             popularPresets={state.popularPresets}
-            onDismiss$={closeAddModal$}
-            onConfirm$={commitAddTimer$}
+            onAddTimer$={commitAddTimer$}
           />
-
-          <div class="sticky top-0 z-20 -mx-4 mb-6 border-b border-gray-200 bg-white/95 px-4 py-3 backdrop-blur supports-backdrop-filter:bg-white/80 dark:border-gray-700 dark:bg-gray-950/95 dark:supports-backdrop-filter:bg-gray-950/80">
-            <button
-              type="button"
-              class="w-full rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 active:scale-[0.99] transition-transform dark:bg-indigo-500 dark:hover:bg-indigo-600"
-              onClick$={() => {
-                addModalOpen.value = true;
-              }}
-            >
-              + Add Timer
-            </button>
-          </div>
 
           {state.timers.length === 0 ? (
             <div class="flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-gray-200 py-16 text-gray-400 dark:border-gray-700 dark:text-gray-600">
