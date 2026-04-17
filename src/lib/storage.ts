@@ -15,8 +15,12 @@ export interface Settings {
   loopGapSeconds: number;
 }
 
-interface PresetHistory {
+const PRESET_SCHEMA_VERSION = 2 as const;
+
+interface PresetHistoryV2 {
+  version: typeof PRESET_SCHEMA_VERSION;
   recent: number[];
+  /** Counts only "Add and start" from the add-timer modal (not card Start). */
   freq: Record<number, number>;
 }
 
@@ -29,6 +33,75 @@ const KEYS = {
 interface SavedTimers {
   timers: Timer[];
   savedAt: number;
+}
+
+function emptyPresets(): PresetHistoryV2 {
+  return { version: PRESET_SCHEMA_VERSION, recent: [], freq: {} };
+}
+
+function loadPresets(): PresetHistoryV2 {
+  try {
+    const raw = localStorage.getItem(KEYS.presets);
+    if (!raw) return emptyPresets();
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object") return emptyPresets();
+    const o = parsed as Record<string, unknown>;
+    const recent = Array.isArray(o.recent)
+      ? (o.recent as unknown[]).filter((d): d is number => typeof d === "number" && Number.isFinite(d))
+      : [];
+
+    if (o.version === PRESET_SCHEMA_VERSION && o.freq !== null && typeof o.freq === "object" && !Array.isArray(o.freq)) {
+      const freq: Record<number, number> = {};
+      for (const [k, v] of Object.entries(o.freq as Record<string, unknown>)) {
+        const dur = Number(k);
+        const n = typeof v === "number" && Number.isFinite(v) ? v : 0;
+        if (dur > 0 && n > 0) freq[dur] = n;
+      }
+      return { version: PRESET_SCHEMA_VERSION, recent, freq };
+    }
+
+    // Legacy: same key shape but freq counted adds — drop freq, keep recent, persist v2
+    const migrated: PresetHistoryV2 = { version: PRESET_SCHEMA_VERSION, recent, freq: {} };
+    savePresets(migrated);
+    return migrated;
+  } catch {
+    return emptyPresets();
+  }
+}
+
+function savePresets(p: PresetHistoryV2): void {
+  localStorage.setItem(KEYS.presets, JSON.stringify(p));
+}
+
+/** Last 3 unique durations committed from the add-timer modal (newest = first = left in UI). */
+export function recordRecentPresetDuration(duration: number): void {
+  const p = loadPresets();
+  p.recent = [duration, ...p.recent.filter((d) => d !== duration)].slice(0, 3);
+  savePresets(p);
+}
+
+/** Increment popular (modal "Add and start" only). */
+export function recordModalTimerStart(duration: number): void {
+  const p = loadPresets();
+  p.freq[duration] = (p.freq[duration] ?? 0) + 1;
+  savePresets(p);
+}
+
+export function getRecentPresets(): number[] {
+  return loadPresets().recent;
+}
+
+const POPULAR_LIMIT = 6;
+
+export function getMostUsedPresets(): number[] {
+  const { freq } = loadPresets();
+  return Object.entries(freq)
+    .sort(([da, a], [db, b]) => {
+      if (b !== a) return b - a;
+      return Number(db) - Number(da);
+    })
+    .slice(0, POPULAR_LIMIT)
+    .map(([d]) => Number(d));
 }
 
 function applyElapsed(timer: Timer, elapsed: number): Timer {
@@ -83,39 +156,4 @@ export function loadSettings(): Settings {
 export function saveSettings(patch: Partial<Settings>): void {
   const current = loadSettings();
   localStorage.setItem(KEYS.settings, JSON.stringify({ ...current, ...patch }));
-}
-
-function loadPresets(): PresetHistory {
-  try {
-    const raw = localStorage.getItem(KEYS.presets);
-    if (!raw) return { recent: [], freq: {} };
-    return JSON.parse(raw);
-  } catch {
-    return { recent: [], freq: {} };
-  }
-}
-
-function savePresets(p: PresetHistory): void {
-  localStorage.setItem(KEYS.presets, JSON.stringify(p));
-}
-
-export function recordPresetUse(duration: number): void {
-  const p = loadPresets();
-  // recent: prepend, keep unique, cap at 3
-  p.recent = [duration, ...p.recent.filter((d) => d !== duration)].slice(0, 3);
-  // freq: increment
-  p.freq[duration] = (p.freq[duration] ?? 0) + 1;
-  savePresets(p);
-}
-
-export function getRecentPresets(): number[] {
-  return loadPresets().recent;
-}
-
-export function getMostUsedPresets(): number[] {
-  const { freq } = loadPresets();
-  return Object.entries(freq)
-    .sort(([, a], [, b]) => b - a)
-    .slice(0, 3)
-    .map(([d]) => Number(d));
 }

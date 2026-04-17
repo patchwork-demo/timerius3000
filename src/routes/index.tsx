@@ -1,12 +1,14 @@
-import { component$, useStore, useTask$, $ } from "@builder.io/qwik";
+import { component$, useStore, useTask$, useSignal, $ } from "@builder.io/qwik";
 import { isBrowser } from "@builder.io/qwik/build";
 import type { DocumentHead } from "@builder.io/qwik-city";
 import { TimerCard } from "~/components/timer-card/timer-card";
+import { AddTimerModal } from "~/components/add-timer-modal/add-timer-modal";
 import {
   type Timer,
   loadTimers,
   saveTimers,
-  recordPresetUse,
+  recordRecentPresetDuration,
+  recordModalTimerStart,
   getRecentPresets,
   getMostUsedPresets,
 } from "~/lib/storage";
@@ -16,15 +18,7 @@ function makeId(): string {
   return Math.random().toString(36).slice(2, 9);
 }
 
-function formatPreset(seconds: number): string {
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
-  if (s === 0) return `${m}m`;
-  return `${m}:${String(s).padStart(2, "0")}`;
-}
-
 const FIXED_PRESETS = [1, 5, 10, 25].map((m) => m * 60);
-
 
 function formatTime(seconds: number): string {
   const h = Math.floor(seconds / 3600);
@@ -54,11 +48,9 @@ function fireNotification(label: string) {
 function TimerPageSkeleton() {
   return (
     <div class="animate-pulse space-y-6" aria-hidden="true">
-      <div class="flex justify-between gap-4">
-        <div class="h-8 w-48 rounded-lg bg-gray-200 dark:bg-gray-700" />
-        <div class="h-10 w-28 rounded-xl bg-gray-200 dark:bg-gray-700" />
+      <div class="-mx-4 border-b border-gray-100 bg-gray-50/80 px-4 py-3 dark:border-gray-800 dark:bg-gray-900/80">
+        <div class="h-10 w-full rounded-xl bg-gray-200 dark:bg-gray-700" />
       </div>
-      <div class="h-24 rounded-2xl bg-gray-100 dark:bg-gray-800" />
       <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <div class="h-40 rounded-2xl bg-gray-100 dark:bg-gray-800" />
         <div class="h-40 rounded-2xl bg-gray-100 dark:bg-gray-800" />
@@ -80,6 +72,8 @@ export default component$(() => {
     recentPresets: [],
     popularPresets: [],
   });
+
+  const addModalOpen = useSignal(false);
 
   // SSR runs this task once with isBrowser false, then resumes the hook slot as "done" so the
   // body is skipped on the client. { eagerness: "load" } registers qinit during SSR so the task
@@ -122,26 +116,39 @@ export default component$(() => {
     { eagerness: "load" },
   );
 
-  const addTimer = $((duration: number) => {
-    state.timers.push({
-      id: makeId(),
-      label: "",
-      duration,
-      remaining: duration,
-      status: "idle",
-      loop: false,
-    });
-    recordPresetUse(duration);
-    state.recentPresets = getRecentPresets();
-    state.popularPresets = getMostUsedPresets();
-    saveTimers(state.timers);
-  });
-
   const requestNotifPermission = $(() => {
     if (typeof Notification !== "undefined" && Notification.permission === "default") {
       Notification.requestPermission();
     }
   });
+
+  const closeAddModal$ = $(() => {
+    addModalOpen.value = false;
+  });
+
+  const commitAddTimer$ = $(
+    (opts: { duration: number; label: string; loop: boolean; startNow: boolean }) => {
+      const status = opts.startNow ? "running" : "idle";
+      const remaining = opts.duration;
+      state.timers.push({
+        id: makeId(),
+        label: opts.label,
+        duration: opts.duration,
+        remaining,
+        status,
+        loop: opts.loop,
+      });
+      recordRecentPresetDuration(opts.duration);
+      if (opts.startNow) {
+        recordModalTimerStart(opts.duration);
+        requestNotifPermission();
+      }
+      state.recentPresets = getRecentPresets();
+      state.popularPresets = getMostUsedPresets();
+      saveTimers(state.timers);
+      addModalOpen.value = false;
+    },
+  );
 
   return (
     <main class="mx-auto max-w-4xl px-4 py-6" aria-busy={state.booting}>
@@ -149,120 +156,77 @@ export default component$(() => {
         <TimerPageSkeleton />
       ) : (
         <>
-      {/* Header */}
-      <div class="mb-6 flex items-center justify-between">
-        <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Timerius 3000</h1>
-        <button
-          class="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 active:scale-95 transition-transform dark:bg-indigo-500 dark:hover:bg-indigo-600"
-          onClick$={() => addTimer(5 * 60)}
-        >
-          + Add Timer
-        </button>
-      </div>
+          <AddTimerModal
+            open={addModalOpen}
+            fixedPresets={FIXED_PRESETS}
+            recentPresets={state.recentPresets}
+            popularPresets={state.popularPresets}
+            onDismiss$={closeAddModal$}
+            onConfirm$={commitAddTimer$}
+          />
 
-      {/* Preset bar */}
-      <div class="mb-6 space-y-2 rounded-2xl border border-gray-100 bg-white p-3 shadow-sm dark:border-gray-700 dark:bg-gray-800">
-        <div class="flex flex-wrap items-center gap-2">
-          <span class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
-            Quick
-          </span>
-          {FIXED_PRESETS.map((secs) => (
+          <div class="sticky top-0 z-20 -mx-4 mb-6 border-b border-gray-200 bg-white/95 px-4 py-3 backdrop-blur supports-backdrop-filter:bg-white/80 dark:border-gray-700 dark:bg-gray-950/95 dark:supports-backdrop-filter:bg-gray-950/80">
             <button
-              key={secs}
-              class="rounded-lg bg-indigo-50 px-3 py-1 text-sm font-medium text-indigo-700 hover:bg-indigo-100 transition-colors dark:bg-indigo-900/40 dark:text-indigo-300 dark:hover:bg-indigo-900/70"
-              onClick$={() => addTimer(secs)}
+              type="button"
+              class="w-full rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 active:scale-[0.99] transition-transform dark:bg-indigo-500 dark:hover:bg-indigo-600"
+              onClick$={() => {
+                addModalOpen.value = true;
+              }}
             >
-              {formatPreset(secs)}
+              + Add Timer
             </button>
-          ))}
-        </div>
-
-        {state.recentPresets.length > 0 && (
-          <div class="flex flex-wrap items-center gap-2">
-            <span class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
-              Recent
-            </span>
-            {state.recentPresets.map((secs) => (
-              <button
-                key={secs}
-                class="rounded-lg bg-gray-50 px-3 py-1 text-sm font-medium text-gray-600 hover:bg-gray-100 transition-colors dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
-                onClick$={() => addTimer(secs)}
-              >
-                {formatPreset(secs)}
-              </button>
-            ))}
           </div>
-        )}
 
-        {state.popularPresets.length > 0 && (
-          <div class="flex flex-wrap items-center gap-2">
-            <span class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
-              Popular
-            </span>
-            {state.popularPresets.map((secs) => (
-              <button
-                key={secs}
-                class="rounded-lg bg-amber-50 px-3 py-1 text-sm font-medium text-amber-700 hover:bg-amber-100 transition-colors dark:bg-amber-900/30 dark:text-amber-300 dark:hover:bg-amber-900/60"
-                onClick$={() => addTimer(secs)}
-              >
-                {formatPreset(secs)}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Timer grid */}
-      {state.timers.length === 0 ? (
-        <div class="flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-gray-200 py-16 text-gray-400 dark:border-gray-700 dark:text-gray-600">
-          <span class="text-4xl">⏱</span>
-          <p class="text-sm">No timers yet. Add one above or pick a preset.</p>
-        </div>
-      ) : (
-        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {state.timers.map((timer, i) => (
-            <TimerCard
-              key={timer.id}
-              timer={timer}
-              onStart$={$(() => {
-                if (state.timers[i].remaining <= 0) {
-                  state.timers[i].remaining = state.timers[i].duration;
-                }
-                state.timers[i].status = "running";
-                saveTimers(state.timers);
-                requestNotifPermission();
-              })}
-              onPause$={$(() => {
-                state.timers[i].status = "paused";
-                saveTimers(state.timers);
-              })}
-              onReset$={$(() => {
-                state.timers[i].remaining = state.timers[i].duration;
-                state.timers[i].status = "idle";
-                saveTimers(state.timers);
-              })}
-              onStopAudio$={$(() => stopAlarm())}
-              onDelete$={$(() => {
-                state.timers.splice(i, 1);
-                saveTimers(state.timers);
-              })}
-              onLoopToggle$={$(() => {
-                state.timers[i].loop = !state.timers[i].loop;
-                saveTimers(state.timers);
-              })}
-              onLabelChange$={$((label: string) => {
-                state.timers[i].label = label;
-                saveTimers(state.timers);
-              })}
-              onDurationChange$={$((seconds: number) => {
-                state.timers[i].duration = seconds;
-                state.timers[i].remaining = seconds;
-                saveTimers(state.timers);
-              })}
-            />
-          ))}
-        </div>
-      )}
+          {state.timers.length === 0 ? (
+            <div class="flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-gray-200 py-16 text-gray-400 dark:border-gray-700 dark:text-gray-600">
+              <span class="text-4xl">⏱</span>
+              <p class="text-sm">No timers yet. Add one with the button above.</p>
+            </div>
+          ) : (
+            <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {state.timers.map((timer, i) => (
+                <TimerCard
+                  key={timer.id}
+                  timer={timer}
+                  onStart$={$(() => {
+                    if (state.timers[i].remaining <= 0) {
+                      state.timers[i].remaining = state.timers[i].duration;
+                    }
+                    state.timers[i].status = "running";
+                    saveTimers(state.timers);
+                    requestNotifPermission();
+                  })}
+                  onPause$={$(() => {
+                    state.timers[i].status = "paused";
+                    saveTimers(state.timers);
+                  })}
+                  onReset$={$(() => {
+                    state.timers[i].remaining = state.timers[i].duration;
+                    state.timers[i].status = "idle";
+                    saveTimers(state.timers);
+                  })}
+                  onStopAudio$={$(() => stopAlarm())}
+                  onDelete$={$(() => {
+                    state.timers.splice(i, 1);
+                    saveTimers(state.timers);
+                  })}
+                  onLoopToggle$={$(() => {
+                    state.timers[i].loop = !state.timers[i].loop;
+                    saveTimers(state.timers);
+                  })}
+                  onLabelChange$={$((label: string) => {
+                    state.timers[i].label = label;
+                    saveTimers(state.timers);
+                  })}
+                  onDurationChange$={$((seconds: number) => {
+                    state.timers[i].duration = seconds;
+                    state.timers[i].remaining = seconds;
+                    saveTimers(state.timers);
+                  })}
+                />
+              ))}
+            </div>
+          )}
         </>
       )}
     </main>

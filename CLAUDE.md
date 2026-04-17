@@ -31,7 +31,7 @@ This is a **Qwik City** SSR web app. Qwik's key distinction: apps are *resumable
 **Structure:**
 - `src/root.tsx` — app shell (`QwikCityProvider` → `RouterHead` + `RouterOutlet`)
 - `src/routes/layout.tsx` — shared layout: fixed footer nav linking `/` ↔ `/audio`, plus theme switcher (auto/light/dark) stored in `localStorage` key `t3k_theme`, toggling `dark` on `document.documentElement` and `color-scheme`
-- `src/routes/index.tsx` — main timer page: timer grid, preset bar, global 1s tick, `document.title` shows the shortest remaining time among **running** timers (default title when none)
+- `src/routes/index.tsx` — main timer page: sticky **+ Add Timer** opens `AddTimerModal`, timer grid, global 1s tick, `document.title` shows the shortest remaining time among **running** timers (default title when none)
 - `src/routes/audio/index.tsx` — audio management: upload, snippet selection, preview, activate, volume, loop count / fade / gap settings
 - `src/components/timer-card/timer-card.tsx` — individual timer card (idle/running/paused/finished); per-timer loop toggle; finished state **Stop** stops in-flight alarm audio then resets
 - `src/lib/storage.ts` — localStorage: timers (`t3k_timers` as `{ timers, savedAt }` for wall-clock catch-up on load), settings (`t3k_settings`: `activeAudioId`, `volume`, `loopCount`, `loopFade`, `loopGapSeconds`), recent/freq preset history (`t3k_presets`)
@@ -44,7 +44,7 @@ This is a **Qwik City** SSR web app. Qwik's key distinction: apps are *resumable
 - On load, `loadTimers()` applies elapsed seconds since `savedAt` to **running** timers (handles finish and looping timers during downtime via `applyElapsed` in `storage.ts`).
 - Alarm playback is centralized in `alarm.ts`; `stopAlarm()` is used from finished timer **Stop**, and before audio previews on the audio page so previews do not stack on an active alarm.
 - The audio route keeps `AudioEntry` blobs in the UI store only through **`noSerialize`** wrappers (see `entriesForStore`) because Qwik stores must not hold raw `Blob` values for serialization.
-- Preset history: `recordPresetUse(duration)` in `src/lib/storage.ts` maintains both a `recent[]` (last 3 unique, newest-first) and a `freq{}` map (duration → count) in localStorage key `t3k_presets`.
+- Preset history (`t3k_presets`, versioned JSON): `recordRecentPresetDuration(duration)` on modal **Add** / **Add and start** (last 3 unique recent, newest-first); `recordModalTimerStart(duration)` only on **Add and start** (popular top 6 by that count). Card **Start** does not update popular. Legacy preset files migrate to `version: 2` and reset `freq` so old add-counts do not mix with modal-start counts.
 
 **TypeScript path alias:** `~/` resolves to `src/`.
 

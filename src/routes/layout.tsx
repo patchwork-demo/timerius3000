@@ -40,58 +40,61 @@ export default component$(() => {
 
   return (
     <>
-      <div class="min-h-screen pb-16">
+      <div class="min-h-screen pb-24">
         <Slot />
       </div>
-      <footer class="fixed bottom-0 left-0 right-0 z-10 flex items-center justify-between border-t border-gray-200 bg-white/90 px-4 py-2 text-sm backdrop-blur dark:border-gray-700 dark:bg-gray-900/90">
-        {/* Nav links */}
-        <div class="flex items-center gap-5">
-          <Link
-            href="/"
-            class={[
-              "flex items-center gap-1.5 font-medium transition-colors",
-              !onAudio
-                ? "text-indigo-500 dark:text-indigo-400"
-                : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200",
-            ]}
-          >
-            <span>⏱</span> Timers
-          </Link>
-          <Link
-            href="/audio"
-            class={[
-              "flex items-center gap-1.5 font-medium transition-colors",
-              onAudio
-                ? "text-indigo-500 dark:text-indigo-400"
-                : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200",
-            ]}
-          >
-            <span>🔊</span> Audio
-          </Link>
-        </div>
-
-        {/* Theme toggle */}
-        <div class="flex items-center gap-0.5 rounded-xl bg-gray-100 p-0.5 dark:bg-gray-800">
-          {THEME_CYCLE.map((t) => (
-            <button
-              key={t}
-              title={THEME_LABEL[t]}
-              aria-label={`${THEME_LABEL[t]} theme`}
-              aria-pressed={theme.value === t}
+      <footer class="fixed bottom-0 left-0 right-0 z-10 flex flex-col gap-1 border-t border-gray-200 bg-white/90 px-4 py-2 text-sm backdrop-blur dark:border-gray-700 dark:bg-gray-900/90">
+        <div class="flex w-full items-center justify-between">
+          <div class="flex items-center gap-5">
+            <Link
+              href="/"
               class={[
-                "rounded-lg px-2.5 py-1 text-xs font-medium transition-all",
-                theme.value === t
-                  ? "bg-white text-indigo-600 shadow-sm dark:bg-gray-700 dark:text-indigo-400"
+                "flex items-center gap-1.5 font-medium transition-colors",
+                !onAudio
+                  ? "text-indigo-500 dark:text-indigo-400"
                   : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200",
               ]}
-              onClick$={() => {
-                theme.value = t;
-              }}
             >
-              {THEME_ICON[t]}
-            </button>
-          ))}
+              <span>⏱</span> Timers
+            </Link>
+            <Link
+              href="/audio"
+              class={[
+                "flex items-center gap-1.5 font-medium transition-colors",
+                onAudio
+                  ? "text-indigo-500 dark:text-indigo-400"
+                  : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200",
+              ]}
+            >
+              <span>🔊</span> Audio
+            </Link>
+          </div>
+
+          <div class="flex items-center gap-0.5 rounded-xl bg-gray-100 p-0.5 dark:bg-gray-800">
+            {THEME_CYCLE.map((t) => (
+              <button
+                key={t}
+                title={THEME_LABEL[t]}
+                aria-label={`${THEME_LABEL[t]} theme`}
+                aria-pressed={theme.value === t}
+                class={[
+                  "rounded-lg px-2.5 py-1 text-xs font-medium transition-all",
+                  theme.value === t
+                    ? "bg-white text-indigo-600 shadow-sm dark:bg-gray-700 dark:text-indigo-400"
+                    : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200",
+                ]}
+                onClick$={() => {
+                  theme.value = t;
+                }}
+              >
+                {THEME_ICON[t]}
+              </button>
+            ))}
+          </div>
         </div>
+        <p class="text-center text-[11px] font-medium tracking-wide text-gray-400 dark:text-gray-500">
+          Timerius 3000
+        </p>
       </footer>
     </>
   );
